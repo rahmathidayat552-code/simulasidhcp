@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        chema::create('exam_sessions', function (Blueprint $table) {
+        Schema::create('exam_sessions', function (Blueprint $table) {
         $table->id();
         $table->foreignId('student_id')->constrained('students')->onDelete('cascade');
         $table->enum('status', ['in_progress', 'completed'])->default('in_progress');
