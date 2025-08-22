@@ -13,27 +13,10 @@ use App\Services\NetworkCalculator;
 
 class ExamController extends Controller
 {
-    /**
-     * Service untuk validasi perintah.
-     * @var CommandValidator
-     */
     protected $commandValidator;
-
-    /**
-     * Service untuk parsing file konfigurasi DHCP.
-     * @var DhcpConfigParser
-     */
     protected $dhcpConfigParser;
-
-    /**
-     * Service untuk kalkulasi jaringan (CIDR).
-     * @var NetworkCalculator
-     */
     protected $networkCalculator;
 
-    /**
-     * Constructor untuk menginjeksi semua service yang dibutuhkan.
-     */
     public function __construct(
         CommandValidator $commandValidator,
         DhcpConfigParser $dhcpConfigParser,
@@ -44,10 +27,6 @@ class ExamController extends Controller
         $this->networkCalculator = $networkCalculator;
     }
 
-    /**
-     * Memulai sesi ujian baru untuk siswa yang sedang login.
-     * Menginisialisasi state awal di session_data.
-     */
     public function start()
     {
         $existingSession = ExamSession::where('student_id', Auth::id())
@@ -64,35 +43,24 @@ class ExamController extends Controller
             'start_time' => now(),
             'session_data' => [
                 'current_step' => 1,
-                'command_step' => 0, // Index untuk sub-perintah dalam satu langkah
+                'command_step' => 0,
             ],
         ]);
 
         return redirect()->route('exam.show', $examSession->id);
     }
 
-    /**
-     * Menampilkan halaman ujian utama.
-     * Mengirim data sesi dan log perintah ke frontend Vue.
-     */
     public function show(ExamSession $session)
     {
-        // Otorisasi: pastikan siswa hanya bisa mengakses sesi miliknya.
         if ($session->student_id !== auth()->id()) {
             abort(403, 'Anda tidak diizinkan mengakses sesi ujian ini.');
         }
-
-        $session->load('commandLogs'); // Eager load relasi commandLogs
-
+        $session->load('commandLogs');
         return \Inertia\Inertia::render('Exam', [
             'examSession' => $session,
         ]);
     }
 
-    /**
-     * Mengeksekusi perintah dari terminal simulasi.
-     * Ini adalah endpoint utama yang dipanggil oleh frontend.
-     */
     public function execute(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -101,7 +69,9 @@ class ExamController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['error' => $validator->errors()->first()], 422);
+            // Jika validasi gagal, kembali dengan error.
+            // Inertia akan menangani ini dengan benar.
+            return back()->withErrors($validator->errors());
         }
         
         $session = ExamSession::findOrFail($request->session_id);
@@ -111,14 +81,11 @@ class ExamController extends Controller
 
         $isValid = $this->commandValidator->isValid($currentStep, $commandStep, $request->command, $sessionData);
         
-        // Logika khusus untuk Langkah 6: saat me-restart service
         if ($isValid && $currentStep === 6 && $commandStep === 0) {
-            // Lakukan evaluasi akhir dan simpan hasilnya di session_data untuk digunakan nanti
             $isSuccess = $this->_evaluateExamSession($session);
             $sessionData['final_result_precalculated'] = $isSuccess ? 'Active (Running)' : 'Failed';
         }
 
-        // Dapatkan output simulasi (bisa dinamis berdasarkan hasil evaluasi)
         $output = $isValid
             ? $this->commandValidator->getSuccessOutput($currentStep, $commandStep, $sessionData)
             : "bash: command not found: " . explode(' ', $request->command)[0];
@@ -131,23 +98,21 @@ class ExamController extends Controller
             'response_output' => $output,
         ]);
 
-        // Jika perintah valid, perbarui state sesi
         if ($isValid) {
             $sessionData['command_step']++;
             if ($this->commandValidator->isStepCompleted($currentStep, $sessionData['command_step'])) {
                 $sessionData['current_step']++;
-                $sessionData['command_step'] = 0; // Reset untuk langkah berikutnya
+                $sessionData['command_step'] = 0;
             }
             $session->session_data = $sessionData;
             $session->save();
         }
 
-        return response()->json(['output' => $output, 'is_correct' => $isValid]);
+        // UBAH BAGIAN INI: Hapus response()->json() dan ganti dengan redirect.
+        // Ini memastikan Inertia selalu menerima respon yang valid.
+        return redirect()->route('exam.show', $session->id);
     }
 
-    /**
-     * Menerima dan memvalidasi input subnet dari form (Langkah 2).
-     */
     public function submitSubnet(Request $request)
     {
         $request->validate([
@@ -171,7 +136,7 @@ class ExamController extends Controller
         $sessionData['subnet'] = $networkInfo['subnet'];
         $sessionData['netmask'] = $networkInfo['netmask'];
         $sessionData['gateway'] = $networkInfo['gateway'];
-        $sessionData['current_step'] = 3; // Lanjut ke langkah 3
+        $sessionData['current_step'] = 3;
         $sessionData['command_step'] = 0;
 
         $session->session_data = $sessionData;
@@ -180,9 +145,6 @@ class ExamController extends Controller
         return redirect()->route('exam.show', $session->id);
     }
 
-    /**
-     * Menyimpan konten dari editor simulasi (Langkah 4 & 5).
-     */
     public function submitConfig(Request $request)
     {
         $request->validate([
@@ -199,19 +161,16 @@ class ExamController extends Controller
         } elseif ($currentStep === 5) {
             $sessionData['interface_config_content'] = $request->config_content;
         } else {
-            return response()->json(['message' => 'Aksi tidak valid untuk langkah ini.'], 400);
+            return back()->withErrors(['config_content' => 'Aksi tidak valid.']);
         }
 
         $session->session_data = $sessionData;
         $session->save();
 
-        return response()->json(['message' => 'Konfigurasi berhasil disimpan.']);
+        // Di sini kita juga redirect agar konsisten
+        return redirect()->route('exam.show', $session->id);
     }
 
-    /**
-     * Menyelesaikan ujian dan menyimpan hasil akhir.
-     * Dipanggil saat siswa menekan tombol "Finalisasi".
-     */
     public function finalize(Request $request)
     {
         $request->validate(['session_id' => 'required|exists:exam_sessions,id']);
@@ -228,37 +187,25 @@ class ExamController extends Controller
         return redirect()->route('exam.result', $session->id);
     }
 
-    /**
-     * Menampilkan halaman hasil akhir ujian.
-     */
     public function result(ExamSession $session)
     {
         if ($session->student_id !== auth()->id()) {
             abort(403);
         }
-        $session->load('student'); // Load nama siswa untuk ditampilkan
+        $session->load('student');
 
         return \Inertia\Inertia::render('Result', [
             'examSession' => $session,
         ]);
     }
     
-    /**
-     * Metode privat terpusat untuk mengevaluasi semua konfigurasi sesi ujian.
-     *
-     * @param ExamSession $session
-     * @return bool True jika semua konfigurasi valid, false jika ada yang salah.
-     */
     private function _evaluateExamSession(ExamSession $session): bool
     {
         $sessionData = $session->session_data;
-
         $dhcpdConfig = $sessionData['dhcpd_config_content'] ?? '';
         $interfaceConfig = $sessionData['interface_config_content'] ?? '';
-
         $isDhcpdValid = $this->dhcpConfigParser->evaluateDhcpdConfig($dhcpdConfig, $sessionData);
         $isInterfaceValid = $this->dhcpConfigParser->evaluateInterfaceConfig($interfaceConfig);
-
         return $isDhcpdValid && $isInterfaceValid;
     }
 }

@@ -12,14 +12,14 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('exam_sessions', function (Blueprint $table) {
-        $table->id();
-        $table->foreignId('student_id')->constrained('students')->onDelete('cascade');
-        $table->enum('status', ['in_progress', 'completed'])->default('in_progress');
-        $table->enum('final_result', ['Active (Running)', 'Failed'])->nullable();
-        $table->dateTime('start_time');
-        $table->dateTime('end_time')->nullable();
-        $table->json('session_data')->nullable();
-        $table->timestamps();
+            $table->id();
+            $table->foreignId('student_id')->constrained('students')->onDelete('cascade');
+            $table->enum('status', ['ongoing', 'completed'])->default('ongoing');
+            $table->enum('final_result', ['Active (Running)', 'Failed'])->nullable();
+            $table->dateTime('start_time');
+            $table->dateTime('end_time')->nullable();
+            $table->json('session_data')->nullable();
+            $table->timestamps();
         });
     }
 

@@ -1,90 +1,79 @@
 <script setup>
 import { ref, onMounted, nextTick } from 'vue';
-import axios from 'axios';
+import { useForm } from '@inertiajs/vue3';
 
 const props = defineProps({
-    sessionId: {
-        type: Number,
-        required: true,
-    },
-    initialLogs: {
-        type: Array,
-        default: () => [],
-    },
+    sessionId: Number,
+    initialLogs: Array,
 });
 
-// Mendefinisikan event yang akan dikirim ke parent component
-const emit = defineEmits(['command-success', 'open-editor']);
+const emit = defineEmits(['open-editor']);
+
+// Menyiapkan form helper Inertia untuk menangani pengiriman perintah
+const form = useForm({
+    session_id: props.sessionId,
+    command: '',
+});
 
 const history = ref([]);
-const command = ref('');
-const isLoading = ref(false);
-const terminalOutput = ref(null); // Ref untuk div output
-const terminalInput = ref(null); // Ref untuk elemen input
+const terminalOutput = ref(null);
+const terminalInput = ref(null);
 
-// Saat komponen pertama kali dimuat
 onMounted(() => {
-    // Isi history dengan log yang sudah ada dari server
     history.value = props.initialLogs.map(log => ({
         command: log.command,
         output: log.response_output,
     }));
-    focusInput(); // Langsung fokus ke input saat halaman dimuat
+    focusInput();
 });
 
-// Fungsi untuk fokus ke elemen input
 const focusInput = () => {
     terminalInput.value?.focus();
 };
 
-// Fungsi untuk scroll otomatis ke bawah
 const scrollToBottom = async () => {
-    await nextTick(); // Menunggu DOM update sebelum scroll
+    await nextTick();
     if (terminalOutput.value) {
         terminalOutput.value.scrollTop = terminalOutput.value.scrollHeight;
     }
 };
 
-// Fungsi yang dieksekusi saat tombol Enter ditekan
-const handleCommand = async () => {
-    if (isLoading.value || command.value.trim() === '') return;
+const handleCommand = () => {
+    if (form.processing || form.command.trim() === '') return;
 
-    isLoading.value = true;
-    const currentCommand = command.value;
-    command.value = ''; // Kosongkan input field
+    const currentCommand = form.command;
 
-    // Tampilkan perintah yang diketik di history agar ada feedback instan
     history.value.push({ command: currentCommand, output: '' });
-    await scrollToBottom();
+    scrollToBottom();
 
-    try {
-        // Kirim perintah ke backend menggunakan axios
-        const response = await axios.post(route('exam.execute'), {
-            session_id: props.sessionId,
-            command: currentCommand,
-        });
+    // Menggunakan form.post dari Inertia
+    form.post(route('exam.execute'), {
+        preserveScroll: true,
+        onSuccess: (page) => {
+            // Update history dengan data terbaru dari server
+            const newLogs = page.props.examSession.command_logs;
+            const lastLog = newLogs[newLogs.length - 1];
+            
+            if (lastLog) {
+                history.value[history.value.length - 1].output = lastLog.response_output;
 
-        // Update entri terakhir di history dengan output dari server
-        history.value[history.value.length - 1].output = response.data.output;
-
-        // Cek jika output berisi trigger untuk membuka nano editor
-        if (response.data.output.includes("Opening nano editor")) {
-            emit('open-editor'); // Kirim event 'open-editor' ke parent
-        }
-        
-        // Jika perintahnya benar, kirim event 'command-success'
-        if (response.data.is_correct) {
-            emit('command-success');
-        }
-
-    } catch (error) {
-        history.value[history.value.length - 1].output = "Error: Gagal terhubung ke server.";
-        console.error("Error executing command:", error);
-    } finally {
-        isLoading.value = false;
-        await scrollToBottom();
-        focusInput();
-    }
+                if (lastLog.response_output.includes("Opening nano editor")) {
+                    emit('open-editor');
+                }
+            }
+        },
+        onError: (errors) => {
+            history.value[history.value.length - 1].output = errors.command || "Error: Gagal mengeksekusi perintah.";
+        },
+        onFinish: () => {
+            // --- INI ADALAH BAGIAN PENTING ---
+            // Mengosongkan kolom input setelah request selesai.
+            form.reset('command');
+            
+            scrollToBottom();
+            focusInput();
+        },
+    });
 };
 </script>
 
@@ -107,9 +96,9 @@ const handleCommand = async () => {
                 <span class="text-green-400 mr-2">student@dhcp-server:~$</span>
                 <input
                     ref="terminalInput"
-                    v-model="command"
+                    v-model="form.command"
                     @keydown.enter.prevent="handleCommand"
-                    :disabled="isLoading"
+                    :disabled="form.processing"
                     type="text"
                     class="bg-transparent border-none text-white w-full focus:ring-0 p-0"
                     placeholder="Ketik perintah di sini dan tekan Enter..."

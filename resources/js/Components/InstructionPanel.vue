@@ -8,16 +8,15 @@ const props = defineProps({
     },
 });
 
-// Daftar semua instruksi untuk setiap langkah
-const instructions = [
-    "Langkah ini tidak valid.",
-    "Lakukan update package list pada server. Perintah: sudo apt update",
-    "Install paket isc-dhcp-server. Perintah: sudo apt install isc-dhcp-server",
-    "Buka file konfigurasi utama DHCP server. Perintah: sudo nano /etc/dhcp/dhcpd.conf",
-    "Buka file untuk menentukan interface jaringan. Perintah: sudo nano /etc/default/isc-dhcp-server",
-    "Restart service DHCP agar konfigurasi baru diterapkan. Perintah: sudo systemctl restart isc-dhcp-server",
-    "Periksa status service untuk memastikan berjalan tanpa error. Perintah: sudo systemctl status isc-dhcp-server",
-];
+// Daftar instruksi yang sudah disesuaikan dengan alur aplikasi
+const instructions = {
+    1: "Langkah pertama adalah melakukan instalasi DHCP Server. Jalankan perintah `sudo apt update` lalu `sudo apt install isc-dhcp-server -y`.",
+    2: "Tentukan alamat jaringan (network) dan subnet mask yang akan digunakan untuk server DHCP Anda. Masukkan dalam format CIDR (Contoh: 192.168.1.0/24) pada form di samping.",
+    3: "Konfigurasikan alamat IP statis untuk server. Pertama, hapus konfigurasi IP lama, lalu tambahkan IP gateway yang sesuai dengan subnet Anda.",
+    4: "Sekarang, edit file konfigurasi utama DHCP server (`dhcpd.conf`) untuk mengatur range IP, DNS, dan parameter lainnya.",
+    5: "Tentukan pada interface jaringan mana DHCP server akan berjalan. Edit file `/etc/default/isc-dhcp-server` dan atur `INTERFACESv4`.",
+    6: "Terakhir, restart service DHCP untuk menerapkan semua konfigurasi, lalu periksa statusnya untuk memastikan service berjalan tanpa error.",
+};
 
 const currentInstruction = computed(() => {
     return instructions[props.currentStep] || "Semua langkah telah selesai. Silakan klik tombol Finalisasi.";
@@ -29,7 +28,7 @@ const currentInstruction = computed(() => {
         <h3 class="font-bold text-lg mb-2 border-b border-gray-600 pb-2">
             Instruksi - Langkah {{ currentStep }}
         </h3>
-        <p class="text-sm font-mono whitespace-pre-wrap">
+        <p class="text-sm font-mono whitespace-pre-wrap leading-relaxed">
             {{ currentInstruction }}
         </p>
     </div>
