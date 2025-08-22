@@ -5,24 +5,35 @@ namespace App\Services;
 class DhcpConfigParser
 {
     /**
-     * Mengevaluasi konten file konfigurasi DHCP.
+     * Mengevaluasi konten file utama dhcpd.conf (Langkah 4).
      *
-     * @param string $configContent Teks mentah dari file dhcpd.conf.
-     * @return bool True jika konfigurasi valid, false jika tidak.
+     * @param string $configContent Teks mentah dari file.
+     * @param array $sessionData Data dari sesi ujian (berisi subnet, netmask, dll).
+     * @return bool
      */
-    public function evaluate(string $configContent): bool
+    public function evaluateDhcpdConfig(string $configContent, array $sessionData): bool
     {
-        // Normalisasi konten: hapus komentar dan baris kosong untuk mempermudah parsing
+        // Pastikan data yang dibutuhkan dari langkah sebelumnya ada
+        if (!isset($sessionData['subnet'], $sessionData['netmask'], $sessionData['gateway'])) {
+            return false;
+        }
+
         $cleanedContent = $this->cleanConfig($configContent);
 
-        // Definisikan kriteria kelulusan
+        // Definisikan kriteria kelulusan secara dinamis
         $criteria = [
             'has_authoritative' => str_contains($cleanedContent, 'authoritative;'),
-            'has_subnet' => preg_match('/subnet\s+192\.168\.1\.0\s+netmask\s+255\.255\.255\.0/', $cleanedContent),
-            'has_range' => preg_match('/range\s+192\.168\.1\.10\s+192\.168\.1\.20;/', $cleanedContent),
-            'has_dns' => preg_match('/option\s+domain-name-servers\s+8\.8\.8\.8,\s*8\.8\.4\.4;/', $cleanedContent),
-            'has_lease_time' => preg_match('/default-lease-time\s+600;/', $cleanedContent),
-            'has_max_lease_time' => preg_match('/max-lease-time\s+7200;/', $cleanedContent),
+            'has_subnet' => preg_match(
+                "/subnet\s+{$sessionData['subnet']}\s+netmask\s+{$sessionData['netmask']}/",
+                $cleanedContent
+            ),
+            'has_routers' => preg_match(
+                "/option\s+routers\s+{$sessionData['gateway']};/",
+                $cleanedContent
+            ),
+            // Anda bisa membuat validasi range dan dns lebih spesifik jika perlu
+            'has_range' => preg_match("/range\s+[\d\.]+\s+[\d\.]+;/", $cleanedContent),
+            'has_dns' => preg_match("/option\s+domain-name-servers\s+[\d\.]+(,\s*[\d\.]+)*;/", $cleanedContent),
         ];
 
         // Jika salah satu kriteria tidak terpenuhi, maka gagal.
@@ -36,10 +47,20 @@ class DhcpConfigParser
     }
 
     /**
-     * Membersihkan string konfigurasi dari komentar dan baris kosong.
+     * Mengevaluasi konten file interface /etc/default/isc-dhcp-server (Langkah 5).
      *
-     * @param string $content
-     * @return string
+     * @param string $configContent Teks mentah dari file.
+     * @return bool
+     */
+    public function evaluateInterfaceConfig(string $configContent): bool
+    {
+        // Cari baris INTERFACESv4="eth0"
+        // Menggunakan regex untuk menangani spasi dan kutip yang berbeda
+        return preg_match('/INTERFACESv4\s*=\s*["\']eth0["\']/', $configContent) === 1;
+    }
+
+    /**
+     * Membersihkan string konfigurasi dari komentar dan baris kosong.
      */
     private function cleanConfig(string $content): string
     {
@@ -47,11 +68,7 @@ class DhcpConfigParser
         $cleanedLines = [];
 
         foreach ($lines as $line) {
-            // Hapus komentar yang dimulai dengan #
-            $line = preg_replace('/#.*$/', '', $line);
-            // Hapus spasi di awal dan akhir
-            $line = trim($line);
-
+            $line = trim(preg_replace('/#.*$/', '', $line));
             if (!empty($line)) {
                 $cleanedLines[] = $line;
             }

@@ -1,13 +1,19 @@
 <script setup>
 import { Head, useForm } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import axios from 'axios';
+
+// Layout & Komponen Bawaan
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import PrimaryButton from '@/Components/PrimaryButton.vue';
+
+// Komponen Kustom untuk Halaman Ujian
 import InstructionPanel from '@/Components/InstructionPanel.vue';
 import Terminal from '@/Components/Terminal.vue';
 import EditorModal from '@/Components/EditorModal.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
+import SubnetInputPanel from '@/Components/SubnetInputPanel.vue';
 
+// Menerima data sesi ujian dari controller sebagai props
 const props = defineProps({
     examSession: {
         type: Object,
@@ -15,47 +21,66 @@ const props = defineProps({
     },
 });
 
-// State reaktif untuk langkah saat ini, diinisialisasi dari data server
+// Membuat state reaktif untuk langkah saat ini agar UI bisa diperbarui
+// Nilai awal diambil dari data yang dikirim server
 const currentStep = ref(props.examSession.session_data.current_step);
-// State reaktif untuk mengontrol visibilitas modal editor
+
+// State reaktif untuk mengontrol kapan modal editor ditampilkan
 const showEditor = ref(false);
 
-// Fungsi yang dijalankan saat Terminal mengirim event 'command-success'
+// Setiap kali Inertia memuat ulang data (setelah submit form/perintah),
+// pastikan `currentStep` di frontend sinkron dengan data terbaru dari backend.
+watch(() => props.examSession.session_data.current_step, (newStep) => {
+    currentStep.value = newStep;
+});
+
+
+// --- HANDLER UNTUK EVENT DARI KOMPONEN ANAK ---
+
+// Fungsi ini dijalankan saat komponen Terminal berhasil mengeksekusi perintah
+// dan mengirim event 'command-success'
 const handleSuccess = () => {
-    // Naikkan nomor langkah saat ini
+    // Naikkan nomor langkah di frontend untuk feedback instan ke siswa
+    // Backend juga melakukan ini, tapi ini membuat UI terasa lebih responsif
     currentStep.value++;
 };
 
-// Fungsi yang dijalankan saat Terminal mengirim event 'open-editor'
+// Fungsi ini dijalankan saat Terminal mendeteksi output untuk membuka nano
+// dan mengirim event 'open-editor'
 const handleOpenEditor = () => {
     // Tampilkan modal editor
     showEditor.value = true;
 };
 
-// Fungsi untuk menyimpan konten dari modal editor ke backend
+
+// --- FUNGSI UNTUK BERINTERAKSI DENGAN BACKEND ---
+
+// Fungsi untuk menyimpan konten dari modal editor
 const saveEditorContent = async (content) => {
     try {
         await axios.post(route('exam.submitConfig'), {
             session_id: props.examSession.id,
             config_content: content,
         });
-        // Beri tahu siswa bahwa konfigurasi mereka sudah disimpan
+        // Beri notifikasi kepada siswa
         alert('Konfigurasi berhasil disimpan!');
     } catch (error) {
         alert('Gagal menyimpan konfigurasi. Silakan coba lagi.');
-        console.error(error);
+        console.error("Error saving config:", error);
     }
 };
 
-// Menggunakan useForm dari Inertia untuk menangani form finalisasi
+// Menyiapkan form untuk finalisasi ujian menggunakan helper dari Inertia
 const finalizeForm = useForm({
     session_id: props.examSession.id,
 });
 
-// Fungsi untuk memfinalisasi ujian
+// Fungsi yang dipanggil saat tombol finalisasi diklik
 const finalizeExam = () => {
-    if (confirm("Apakah Anda yakin ingin menyelesaikan ujian? Anda tidak bisa kembali lagi.")) {
-        // Kirim request POST ke backend, Inertia akan menangani redirect ke halaman hasil
+    // Minta konfirmasi dari siswa sebelum mengirim
+    if (confirm("Apakah Anda yakin ingin menyelesaikan dan mengumpulkan ujian? Tindakan ini tidak dapat dibatalkan.")) {
+        // Kirim request POST. Inertia akan otomatis menangani redirect
+        // ke halaman hasil jika backend mengirimkan redirect response.
         finalizeForm.post(route('exam.finalize'));
     }
 };
@@ -68,7 +93,7 @@ const finalizeExam = () => {
         <template #header>
             <div class="flex justify-between items-center">
                 <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                    Simulasi Ujian DHCP Server
+                    Simulasi Ujian Praktik DHCP Server
                 </h2>
                 <PrimaryButton @click="finalizeExam" :disabled="finalizeForm.processing">
                     <span v-if="finalizeForm.processing">Memproses...</span>
@@ -87,10 +112,15 @@ const finalizeExam = () => {
 
                     <div class="md:col-span-2">
                         <Terminal
+                            v-if="currentStep !== 2"
                             :session-id="examSession.id"
                             :initial-logs="examSession.command_logs"
                             @command-success="handleSuccess"
                             @open-editor="handleOpenEditor"
+                        />
+                        <SubnetInputPanel
+                            v-else
+                            :session-id="examSession.id"
                         />
                     </div>
                 </div>
