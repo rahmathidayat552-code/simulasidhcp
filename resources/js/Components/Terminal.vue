@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, nextTick } from 'vue';
+import { ref, onMounted, nextTick, watch } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -9,7 +9,6 @@ const props = defineProps({
 
 const emit = defineEmits(['open-editor']);
 
-// Menyiapkan form helper Inertia untuk menangani pengiriman perintah
 const form = useForm({
     session_id: props.sessionId,
     command: '',
@@ -19,11 +18,20 @@ const history = ref([]);
 const terminalOutput = ref(null);
 const terminalInput = ref(null);
 
-onMounted(() => {
-    history.value = props.initialLogs.map(log => ({
+const updateHistory = (logs) => {
+    history.value = logs.map(log => ({
         command: log.command,
         output: log.response_output,
     }));
+};
+
+watch(() => props.initialLogs, (newLogs) => {
+    updateHistory(newLogs);
+    scrollToBottom();
+}, { deep: true });
+
+onMounted(() => {
+    updateHistory(props.initialLogs);
     focusInput();
 });
 
@@ -41,36 +49,31 @@ const scrollToBottom = async () => {
 const handleCommand = () => {
     if (form.processing || form.command.trim() === '') return;
 
-    const currentCommand = form.command;
+    // --- LOGIKA BARU YANG LEBIH STABIL ---
+    
+    // 1. Simpan perintah saat ini ke variabel sementara
+    const commandToExecute = form.command;
 
-    history.value.push({ command: currentCommand, output: '' });
-    scrollToBottom();
+    // 2. Tampilkan perintah di history
+    history.value.push({ command: commandToExecute, output: '' });
+    
+    // 3. KOSONGKAN input field secara manual SEKARANG JUGA
+    form.command = '';
 
-    // Menggunakan form.post dari Inertia
-    form.post(route('exam.execute'), {
+    // 4. Kirim data ke backend menggunakan variabel sementara
+    form.transform(() => ({
+        session_id: props.sessionId,
+        command: commandToExecute, // Kirim perintah yang sudah disimpan
+    })).post(route('exam.execute'), {
         preserveScroll: true,
         onSuccess: (page) => {
-            // Update history dengan data terbaru dari server
-            const newLogs = page.props.examSession.command_logs;
-            const lastLog = newLogs[newLogs.length - 1];
-            
-            if (lastLog) {
-                history.value[history.value.length - 1].output = lastLog.response_output;
-
-                if (lastLog.response_output.includes("Opening nano editor")) {
-                    emit('open-editor');
-                }
+            const lastLog = page.props.examSession.command_logs.slice(-1)[0];
+            if (lastLog && lastLog.response_output.includes("Opening nano editor")) {
+                emit('open-editor');
             }
         },
-        onError: (errors) => {
-            history.value[history.value.length - 1].output = errors.command || "Error: Gagal mengeksekusi perintah.";
-        },
         onFinish: () => {
-            // --- INI ADALAH BAGIAN PENTING ---
-            // Mengosongkan kolom input setelah request selesai.
-            form.reset('command');
-            
-            scrollToBottom();
+            // Cukup fokus ke input karena sudah dikosongkan
             focusInput();
         },
     });

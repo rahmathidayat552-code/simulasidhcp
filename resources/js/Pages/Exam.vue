@@ -39,11 +39,7 @@ watch(() => props.examSession.session_data.current_step, (newStep) => {
 
 // Fungsi ini dijalankan saat komponen Terminal berhasil mengeksekusi perintah
 // dan mengirim event 'command-success'
-const handleSuccess = () => {
-    // Naikkan nomor langkah di frontend untuk feedback instan ke siswa
-    // Backend juga melakukan ini, tapi ini membuat UI terasa lebih responsif
-    currentStep.value++;
-};
+
 
 // Fungsi ini dijalankan saat Terminal mendeteksi output untuk membuka nano
 // dan mengirim event 'open-editor'

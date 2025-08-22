@@ -5,63 +5,64 @@ namespace App\Services;
 class DhcpConfigParser
 {
     /**
-     * Mengevaluasi konten file utama dhcpd.conf (Langkah 4).
+     * Mengevaluasi file dhcpd.conf dan memberikan skor/nilai.
      *
-     * @param string $configContent Teks mentah dari file.
-     * @param array $sessionData Data dari sesi ujian (berisi subnet, netmask, dll).
-     * @return bool
+     * @param string $configContent
+     * @param array $sessionData
+     * @return array ['isValid' => bool, 'errors' => array]
      */
-    public function evaluateDhcpdConfig(string $configContent, array $sessionData): bool
+    public function evaluateDhcpdConfig(string $configContent, array $sessionData): array
     {
-        // Pastikan data yang dibutuhkan dari langkah sebelumnya ada
+        $errors = [];
         if (!isset($sessionData['subnet'], $sessionData['netmask'], $sessionData['gateway'])) {
-            return false;
+            $errors[] = 'Data subnet dari Langkah 2 tidak ditemukan.';
+            return ['isValid' => false, 'errors' => $errors];
         }
 
         $cleanedContent = $this->cleanConfig($configContent);
 
-        // Definisikan kriteria kelulusan secara dinamis
-        $criteria = [
-            'has_authoritative' => str_contains($cleanedContent, 'authoritative;'),
-            'has_subnet' => preg_match(
-                "/subnet\s+{$sessionData['subnet']}\s+netmask\s+{$sessionData['netmask']}/",
-                $cleanedContent
-            ),
-            'has_routers' => preg_match(
-                "/option\s+routers\s+{$sessionData['gateway']};/",
-                $cleanedContent
-            ),
-            // Anda bisa membuat validasi range dan dns lebih spesifik jika perlu
-            'has_range' => preg_match("/range\s+[\d\.]+\s+[\d\.]+;/", $cleanedContent),
-            'has_dns' => preg_match("/option\s+domain-name-servers\s+[\d\.]+(,\s*[\d\.]+)*;/", $cleanedContent),
-        ];
-
-        // Jika salah satu kriteria tidak terpenuhi, maka gagal.
-        foreach ($criteria as $check) {
-            if (!$check) {
-                return false;
-            }
+        // Kriteria Pengecekan
+        if (!str_contains($cleanedContent, 'authoritative;')) {
+            $errors[] = 'dhcpd.conf: Direktif "authoritative" tidak ditemukan.';
+        }
+        if (!preg_match("/subnet\s+{$sessionData['subnet']}\s+netmask\s+{$sessionData['netmask']}/", $cleanedContent)) {
+            $errors[] = "dhcpd.conf: Deklarasi subnet/netmask tidak sesuai (seharusnya untuk {$sessionData['subnet']}).";
+        }
+        if (!preg_match("/option\s+routers\s+{$sessionData['gateway']};/", $cleanedContent)) {
+            $errors[] = "dhcpd.conf: Opsi router (gateway) tidak sesuai (seharusnya {$sessionData['gateway']}).";
+        }
+        if (!preg_match("/range\s+[\d\.]+\s+[\d\.]+;/", $cleanedContent)) {
+            $errors[] = 'dhcpd.conf: "range" untuk alamat IP tidak ditemukan atau salah format.';
+        }
+        if (!preg_match("/option\s+domain-name-servers/", $cleanedContent)) {
+            $errors[] = 'dhcpd.conf: "option domain-name-servers" tidak diatur.';
         }
 
-        return true;
+        return [
+            'isValid' => empty($errors),
+            'errors' => $errors,
+        ];
     }
 
     /**
-     * Mengevaluasi konten file interface /etc/default/isc-dhcp-server (Langkah 5).
+     * Mengevaluasi file interface dan memberikan skor/nilai.
      *
-     * @param string $configContent Teks mentah dari file.
-     * @return bool
+     * @param string $configContent
+     * @return array ['isValid' => bool, 'errors' => array]
      */
-    public function evaluateInterfaceConfig(string $configContent): bool
+    public function evaluateInterfaceConfig(string $configContent): array
     {
-        // Cari baris INTERFACESv4="eth0"
-        // Menggunakan regex untuk menangani spasi dan kutip yang berbeda
-        return preg_match('/INTERFACESv4\s*=\s*["\']eth0["\']/', $configContent) === 1;
+        $errors = [];
+        if (preg_match('/INTERFACESv4\s*=\s*["\']eth0["\']/', $configContent) !== 1) {
+            $errors[] = 'interfaces: INTERFACESv4 tidak diatur ke "eth0".';
+        }
+        
+        return [
+            'isValid' => empty($errors),
+            'errors' => $errors,
+        ];
     }
-
-    /**
-     * Membersihkan string konfigurasi dari komentar dan baris kosong.
-     */
+    
     private function cleanConfig(string $content): string
     {
         $lines = explode("\n", $content);
@@ -73,7 +74,6 @@ class DhcpConfigParser
                 $cleanedLines[] = $line;
             }
         }
-
         return implode(' ', $cleanedLines);
     }
 }

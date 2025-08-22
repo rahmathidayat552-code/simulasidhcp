@@ -69,8 +69,6 @@ class ExamController extends Controller
         ]);
 
         if ($validator->fails()) {
-            // Jika validasi gagal, kembali dengan error.
-            // Inertia akan menangani ini dengan benar.
             return back()->withErrors($validator->errors());
         }
         
@@ -82,8 +80,9 @@ class ExamController extends Controller
         $isValid = $this->commandValidator->isValid($currentStep, $commandStep, $request->command, $sessionData);
         
         if ($isValid && $currentStep === 6 && $commandStep === 0) {
-            $isSuccess = $this->_evaluateExamSession($session);
-            $sessionData['final_result_precalculated'] = $isSuccess ? 'Active (Running)' : 'Failed';
+            $evaluation = $this->_evaluateExamSession($session);
+            $sessionData['final_result_precalculated'] = $evaluation['isSuccess'] ? 'Active (Running)' : 'Failed';
+            $sessionData['evaluation_errors'] = $evaluation['errors'];
         }
 
         $output = $isValid
@@ -108,8 +107,6 @@ class ExamController extends Controller
             $session->save();
         }
 
-        // UBAH BAGIAN INI: Hapus response()->json() dan ganti dengan redirect.
-        // Ini memastikan Inertia selalu menerima respon yang valid.
         return redirect()->route('exam.show', $session->id);
     }
 
@@ -167,7 +164,6 @@ class ExamController extends Controller
         $session->session_data = $sessionData;
         $session->save();
 
-        // Di sini kita juga redirect agar konsisten
         return redirect()->route('exam.show', $session->id);
     }
 
@@ -176,11 +172,11 @@ class ExamController extends Controller
         $request->validate(['session_id' => 'required|exists:exam_sessions,id']);
         $session = ExamSession::findOrFail($request->session_id);
         
-        $isSuccess = $this->_evaluateExamSession($session);
+        $evaluation = $this->_evaluateExamSession($session);
 
         $session->update([
             'status' => 'completed',
-            'final_result' => $isSuccess ? 'Active (Running)' : 'Failed',
+            'final_result' => $evaluation['isSuccess'] ? 'Active (Running)' : 'Failed',
             'end_time' => now(),
         ]);
 
@@ -199,13 +195,21 @@ class ExamController extends Controller
         ]);
     }
     
-    private function _evaluateExamSession(ExamSession $session): bool
+    private function _evaluateExamSession(ExamSession $session): array
     {
         $sessionData = $session->session_data;
         $dhcpdConfig = $sessionData['dhcpd_config_content'] ?? '';
         $interfaceConfig = $sessionData['interface_config_content'] ?? '';
-        $isDhcpdValid = $this->dhcpConfigParser->evaluateDhcpdConfig($dhcpdConfig, $sessionData);
-        $isInterfaceValid = $this->dhcpConfigParser->evaluateInterfaceConfig($interfaceConfig);
-        return $isDhcpdValid && $isInterfaceValid;
+
+        $dhcpdResult = $this->dhcpConfigParser->evaluateDhcpdConfig($dhcpdConfig, $sessionData);
+        $interfaceResult = $this->dhcpConfigParser->evaluateInterfaceConfig($interfaceConfig);
+        
+        $allErrors = array_merge($dhcpdResult['errors'], $interfaceResult['errors']);
+        $isSuccess = $dhcpdResult['isValid'] && $interfaceResult['isValid'];
+
+        return [
+            'isSuccess' => $isSuccess,
+            'errors' => $allErrors,
+        ];
     }
 }

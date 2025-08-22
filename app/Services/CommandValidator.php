@@ -8,23 +8,17 @@ class CommandValidator
      * Daftar perintah yang diharapkan untuk setiap langkah ujian.
      */
     private const EXPECTED_COMMANDS = [
-        // Langkah 1: Instalasi
         1 => [
             'sudo apt update',
             'sudo apt install isc-dhcp-server -y',
         ],
-        // Langkah 2: Ditangani oleh form, bukan terminal.
         2 => [],
-        // Langkah 3: Konfigurasi IP Statis
         3 => [
             'sudo ip addr flush dev eth0',
             'sudo ip addr add {{gateway}}/24 dev eth0',
         ],
-        // Langkah 4: Edit Konfigurasi Utama DHCP
         4 => ['sudo nano /etc/dhcp/dhcpd.conf'],
-        // Langkah 5: Edit Konfigurasi Interface
-        5 => ['sudo nano /etc/default/isc-dhcp-server'], // <-- Perintah ini yang penting
-        // Langkah 6: Restart & Cek Status
+        5 => ['sudo nano /etc/default/isc-dhcp-server'],
         6 => [
             'sudo systemctl restart isc-dhcp-server',
             'sudo systemctl status isc-dhcp-server'
@@ -60,13 +54,15 @@ class CommandValidator
      */
     public function getSuccessOutput(int $step, int $commandIndex, array $sessionData = []): string
     {
-        if ($step === 6 && $commandIndex === 1) {
-            $precalculatedResult = $sessionData['final_result_precalculated'] ?? 'Failed';
+        if ($step === 6 && $commandIndex === 1) { // Perintah 'status'
+            $result = $sessionData['final_result_precalculated'] ?? 'Failed';
             
-            if ($precalculatedResult === 'Active (Running)') {
+            if ($result === 'Active (Running)') {
                 return "● isc-dhcp-server.service - ISC DHCP IPv4 server\n   Active: active (running) since " . date('Y-m-d H:i:s') . " UTC";
             } else {
-                return "● isc-dhcp-server.service - ISC DHCP IPv4 server\n   Active: failed (Result: exit-code) since " . date('Y-m-d H:i:s') . " UTC";
+                $errors = $sessionData['evaluation_errors'] ?? ['Konfigurasi tidak diketahui.'];
+                $errorString = implode("\n", array_map(fn($err) => " - {$err}", $errors));
+                return "● isc-dhcp-server.service - ISC DHCP IPv4 server\n   Active: failed (Result: exit-code) since " . date('Y-m-d H:i:s') . " UTC\n\nDetail Kesalahan:\n{$errorString}";
             }
         }
         
@@ -80,7 +76,7 @@ class CommandValidator
                 "Static IP address configured successfully on eth0.",
             ],
             4 => ["Opening nano editor for /etc/dhcp/dhcpd.conf..."],
-            5 => ["Opening nano editor for /etc/default/isc-dhcp-server..."], // <-- Output untuk perintah ini
+            5 => ["Opening nano editor for /etc/default/isc-dhcp-server..."],
             6 => [
                 "Restarting ISC DHCP Server...",
             ],
