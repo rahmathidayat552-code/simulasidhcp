@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ExamController;
+use App\Http\Controllers\Admin\StudentController;
 use App\Models\ExamSession;
 
 /*
@@ -14,7 +15,6 @@ use App\Models\ExamSession;
 */
 
 Route::get('/', function () {
-    // Menampilkan halaman Welcome dari Vue
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
         'canRegister' => Route::has('register'),
@@ -22,28 +22,24 @@ Route::get('/', function () {
 });
 
 Route::get('/dashboard', function () {
-    // Cek apakah ada sesi ujian yang sedang berlangsung
     $activeSession = ExamSession::where('student_id', Auth::id())
         ->where('status', 'ongoing')
         ->first();
 
-    // Jika ada, langsung redirect ke halaman ujian
     if ($activeSession) {
         return redirect()->route('exam.show', $activeSession->id);
     }
 
-    // Jika tidak, tampilkan dashboard
     return Inertia::render('Dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
 
-// Grup route yang hanya bisa diakses setelah login
+// Grup route yang memerlukan autentikasi
 Route::middleware('auth')->group(function () {
-    // Route untuk profil (bawaan Breeze)
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
-    /*--- Route untuk Simulasi Ujian ---*/
+    /*--- Route untuk Simulasi Ujian (untuk Siswa) ---*/
     Route::post('/exam/start', [ExamController::class, 'start'])->name('exam.start');
     Route::get('/exam/{session}', [ExamController::class, 'show'])->name('exam.show');
     Route::post('/exam/execute', [ExamController::class, 'execute'])->name('exam.execute');
@@ -53,5 +49,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/exam/result/{session}', [ExamController::class, 'result'])->name('exam.result');
 });
 
-// Memuat semua route untuk autentikasi (login, register, dll)
+/*--- Route untuk Halaman Admin (untuk Guru) ---*/
+Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
+    Route::get('/students', [StudentController::class, 'index'])->name('students.index');
+    Route::post('/students', [StudentController::class, 'store'])->name('students.store');
+});
+
 require __DIR__.'/auth.php';
