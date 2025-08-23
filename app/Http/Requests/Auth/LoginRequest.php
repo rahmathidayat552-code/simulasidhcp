@@ -4,10 +4,7 @@ namespace App\Http\Requests\Auth;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
-use App\Models\User;   // <-- Tambahkan ini
-use App\Models\Student; // <-- Tambahkan ini
 
 class LoginRequest extends FormRequest
 {
@@ -24,37 +21,28 @@ class LoginRequest extends FormRequest
         ];
     }
 
-    /**
-     * Attempt to authenticate the request's credentials.
-     *
-     * @throws \Illuminate\Validation\ValidationException
-     */
     public function authenticate(): void
     {
         $credential = $this->input('credential');
         $password = $this->input('password');
         $remember = $this->boolean('remember');
 
-        $user = null;
-
-        // Cek apakah input adalah email
+        // Coba login sebagai Guru/Admin terlebih dahulu
         if (filter_var($credential, FILTER_VALIDATE_EMAIL)) {
-            // Jika ya, cari di tabel 'users' (untuk Guru/Admin)
-            $user = User::where('email', $credential)->first();
-        } else {
-            // Jika bukan, cari di tabel 'students' (untuk Siswa)
-            $user = Student::where('nisn', $credential)->first();
+            if (Auth::guard('web')->attempt(['email' => $credential, 'password' => $password], $remember)) {
+                return; // Berhasil login sebagai guru
+            }
+        } 
+        // Jika gagal atau bukan email, coba login sebagai Siswa
+        else {
+            if (Auth::guard('student')->attempt(['nisn' => $credential, 'password' => $password], $remember)) {
+                return; // Berhasil login sebagai siswa
+            }
         }
 
-        // Jika user tidak ditemukan ATAU password salah
-        if (!$user || !Hash::check($password, $user->password)) {
-            // Lemparkan error 'auth.failed'
-            throw ValidationException::withMessages([
-                'credential' => trans('auth.failed'),
-            ]);
-        }
-
-        // Jika user ditemukan dan password cocok, loginkan
-        Auth::login($user, $remember);
+        // Jika keduanya gagal, lemparkan error
+        throw ValidationException::withMessages([
+            'credential' => trans('auth.failed'),
+        ]);
     }
 }

@@ -7,12 +7,12 @@ class CommandValidator
     /**
      * Daftar perintah yang diharapkan untuk setiap langkah ujian.
      */
-    private const EXPECTED_COMMANDS = [
+    public const EXPECTED_COMMANDS = [
         1 => [
             'sudo apt update',
             'sudo apt install isc-dhcp-server -y',
         ],
-        2 => [],
+        2 => [], // Ditangani oleh form, bukan terminal
         3 => [
             'sudo ip addr flush dev eth0',
             'sudo ip addr add {{gateway}}/24 dev eth0',
@@ -32,6 +32,25 @@ class CommandValidator
     {
         $trimmedCommand = trim($command);
 
+        // Logika untuk Mode Latihan (jika sudah di langkah 7 atau lebih)
+        if ($step >= 7) {
+            // Izinkan siswa menjalankan kembali perintah dari langkah 2 hingga 6
+            for ($practiceStep = 2; $practiceStep <= 6; $practiceStep++) {
+                foreach (self::EXPECTED_COMMANDS[$practiceStep] as $cmd) {
+                    $expectedCmd = $cmd;
+                    if (str_contains($expectedCmd, '{{gateway}}')) {
+                        $gateway = $sessionData['gateway'] ?? '';
+                        if (empty($gateway)) continue;
+                        $expectedCmd = str_replace('{{gateway}}', $gateway, $expectedCmd);
+                    }
+                    if ($trimmedCommand === $expectedCmd) {
+                        return true; // Perintah ditemukan dan valid
+                    }
+                }
+            }
+        }
+
+        // Validasi normal untuk alur ujian
         if (!isset(self::EXPECTED_COMMANDS[$step][$commandIndex])) {
             return false;
         }
@@ -96,6 +115,10 @@ class CommandValidator
         
         return $nextCommandIndex >= count(self::EXPECTED_COMMANDS[$step]);
     }
+
+    /**
+     * Memeriksa apakah sebuah perintah adalah perintah 'nano'.
+     */
     public function isNanoCommand(string $command): bool
     {
         return str_starts_with(trim($command), 'sudo nano');

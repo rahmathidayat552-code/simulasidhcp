@@ -15,10 +15,12 @@ return new class extends Migration
             $table->id();
             $table->foreignId('student_id')->constrained('students')->onDelete('cascade');
             $table->enum('status', ['ongoing', 'completed'])->default('ongoing');
+            $table->unsignedInteger('duration')->default(25);
             $table->enum('final_result', ['Active (Running)', 'Failed'])->nullable();
             $table->dateTime('start_time');
             $table->dateTime('end_time')->nullable();
             $table->json('session_data')->nullable();
+            
             $table->timestamps();
         });
     }

@@ -29,7 +29,7 @@ class ExamController extends Controller
 
     public function start()
     {
-        $existingSession = ExamSession::where('student_id', Auth::id())
+        $existingSession = ExamSession::where('student_id', Auth::guard('student')->id())
             ->where('status', 'ongoing')
             ->first();
 
@@ -38,9 +38,10 @@ class ExamController extends Controller
         }
 
         $examSession = ExamSession::create([
-            'student_id' => Auth::id(),
+            'student_id' => Auth::guard('student')->id(),
             'status' => 'ongoing',
             'start_time' => now(),
+            'duration' => 25, // Durasi default 25 menit
             'session_data' => [
                 'current_step' => 1,
                 'command_step' => 0,
@@ -52,7 +53,7 @@ class ExamController extends Controller
 
     public function show(ExamSession $session)
     {
-        if ($session->student_id !== auth()->id()) {
+        if ($session->student_id !== Auth::guard('student')->id()) {
             abort(403, 'Anda tidak diizinkan mengakses sesi ujian ini.');
         }
         $session->load('commandLogs');
@@ -67,7 +68,7 @@ class ExamController extends Controller
             'command' => 'required|string',
             'session_id' => 'required|exists:exam_sessions,id',
         ]);
-
+    
         if ($validator->fails()) {
             return back()->withErrors($validator->errors());
         }
@@ -76,7 +77,51 @@ class ExamController extends Controller
         $sessionData = $session->session_data;
         $currentStep = $sessionData['current_step'] ?? 1;
         $commandStep = $sessionData['command_step'] ?? 0;
-
+    
+        // Logika untuk Mode Latihan (jika siswa sudah mencapai langkah akhir)
+        if ($currentStep >= 7) {
+            $executedCmd = trim($request->command);
+            $output = "bash: command not found: " . explode(' ', $executedCmd)[0];
+            $isValid = false;
+    
+            // Loop melalui semua kemungkinan perintah yang bisa diulang
+            for ($practiceStep = 2; $practiceStep <= 6; $practiceStep++) {
+                foreach (CommandValidator::EXPECTED_COMMANDS[$practiceStep] as $idx => $cmdTemplate) {
+                    $expectedCmd = $cmdTemplate;
+                    if (str_contains($expectedCmd, '{{gateway}}')) {
+                        $gateway = $sessionData['gateway'] ?? '';
+                        if(empty($gateway)) continue;
+                        $expectedCmd = str_replace('{{gateway}}', $gateway, $expectedCmd);
+                    }
+    
+                    if ($executedCmd === $expectedCmd) {
+                        $isValid = true;
+                        // Jika perintah restart, jalankan evaluasi ulang
+                        if ($practiceStep === 6 && $idx === 0) {
+                             $evaluation = $this->_evaluateExamSession($session);
+                             $sessionData['final_result_precalculated'] = $evaluation['isSuccess'] ? 'Active (Running)' : 'Failed';
+                             $sessionData['evaluation_errors'] = $evaluation['errors'];
+                             $session->session_data = $sessionData;
+                             $session->save();
+                        }
+                        $output = $this->commandValidator->getSuccessOutput($practiceStep, $idx, $sessionData);
+                        break 2; // Keluar dari kedua loop
+                    }
+                }
+            }
+    
+            CommandLog::create([
+                'exam_session_id' => $session->id,
+                'step_number' => $currentStep,
+                'command' => $request->command,
+                'is_correct' => $isValid,
+                'response_output' => $output,
+            ]);
+    
+            return redirect()->route('exam.show', $session->id);
+        }
+    
+        // Alur Ujian Normal (Langkah 1-6)
         $isValid = $this->commandValidator->isValid($currentStep, $commandStep, $request->command, $sessionData);
         
         if ($isValid && $currentStep === 6 && $commandStep === 0) {
@@ -84,11 +129,11 @@ class ExamController extends Controller
             $sessionData['final_result_precalculated'] = $evaluation['isSuccess'] ? 'Active (Running)' : 'Failed';
             $sessionData['evaluation_errors'] = $evaluation['errors'];
         }
-
+    
         $output = $isValid
             ? $this->commandValidator->getSuccessOutput($currentStep, $commandStep, $sessionData)
             : "bash: command not found: " . explode(' ', $request->command)[0];
-
+    
         CommandLog::create([
             'exam_session_id' => $session->id,
             'step_number' => $currentStep,
@@ -96,10 +141,8 @@ class ExamController extends Controller
             'is_correct' => $isValid,
             'response_output' => $output,
         ]);
-
+    
         if ($isValid) {
-            // PERUBAHAN DI SINI:
-            // Langkah hanya akan dinaikkan jika perintahnya BUKAN perintah nano.
             if (!$this->commandValidator->isNanoCommand($request->command)) {
                 $sessionData['command_step']++;
                 if ($this->commandValidator->isStepCompleted($currentStep, $sessionData['command_step'])) {
@@ -110,31 +153,42 @@ class ExamController extends Controller
                 $session->save();
             }
         }
-
+    
         return redirect()->route('exam.show', $session->id);
     }
 
     public function submitSubnet(Request $request)
     {
-        // ... (fungsi ini tidak berubah)
         $request->validate([
             'session_id' => 'required|exists:exam_sessions,id',
             'subnet_cidr' => 'required|string',
         ]);
         $session = ExamSession::findOrFail($request->session_id);
-        if (($session->session_data['current_step'] ?? 1) != 2) {
-            return back()->withErrors(['subnet_cidr' => 'Aksi tidak diizinkan pada langkah ini.']);
+        $currentStep = $session->session_data['current_step'] ?? 1;
+
+        // Izinkan perubahan jika di langkah 2 atau di mode latihan
+        if ($currentStep > 2 && $currentStep < 7) {
+            return back()->withErrors(['subnet_cidr' => 'Tidak dapat mengubah subnet di tengah ujian.']);
         }
+
         $networkInfo = $this->networkCalculator->parseCidr($request->subnet_cidr);
         if (!$networkInfo) {
             return back()->withErrors(['subnet_cidr' => 'Format CIDR tidak valid. Contoh: 192.168.1.0/24']);
         }
+        
         $sessionData = $session->session_data;
         $sessionData['subnet'] = $networkInfo['subnet'];
         $sessionData['netmask'] = $networkInfo['netmask'];
         $sessionData['gateway'] = $networkInfo['gateway'];
+        
+        // Reset langkah ke 3 agar siswa mengkonfigurasi ulang IP statis
         $sessionData['current_step'] = 3;
         $sessionData['command_step'] = 0;
+        
+        // Hapus konfigurasi lama yang bergantung pada subnet
+        unset($sessionData['dhcpd_config_content']);
+        unset($sessionData['interface_config_content']);
+
         $session->session_data = $sessionData;
         $session->save();
         return redirect()->route('exam.show', $session->id);
@@ -146,35 +200,37 @@ class ExamController extends Controller
             'session_id' => 'required|exists:exam_sessions,id',
             'config_content' => 'nullable|string',
         ]);
-
         $session = ExamSession::findOrFail($request->session_id);
         $sessionData = $session->session_data;
         $currentStep = $sessionData['current_step'] ?? 1;
 
-        if ($currentStep === 4) {
+        $isPracticeMode = $currentStep >= 7;
+        
+        // Tentukan file mana yang diedit berdasarkan perintah terakhir
+        $lastCommand = CommandLog::where('exam_session_id', $session->id)->latest()->first()->command ?? '';
+
+        if (str_contains($lastCommand, 'dhcpd.conf')) {
             $sessionData['dhcpd_config_content'] = $request->config_content;
-        } elseif ($currentStep === 5) {
+             if (!$isPracticeMode) $sessionData['current_step'] = 5; // Maju ke langkah 5
+        } elseif (str_contains($lastCommand, 'isc-dhcp-server')) {
             $sessionData['interface_config_content'] = $request->config_content;
+             if (!$isPracticeMode) $sessionData['current_step'] = 6; // Maju ke langkah 6
         } else {
             return back()->withErrors(['config_content' => 'Aksi tidak valid.']);
         }
 
-        // PERUBAHAN DI SINI:
-        // Setelah menyimpan konfigurasi, SEKARANG kita naikkan langkahnya.
-        $sessionData['current_step']++;
-        $sessionData['command_step'] = 0;
+        if (!$isPracticeMode) $sessionData['command_step'] = 0;
         
         $session->session_data = $sessionData;
         $session->save();
-
         return redirect()->route('exam.show', $session->id);
     }
 
     public function finalize(Request $request)
     {
-        // ... (fungsi ini tidak berubah)
         $request->validate(['session_id' => 'required|exists:exam_sessions,id']);
         $session = ExamSession::findOrFail($request->session_id);
+        
         $evaluation = $this->_evaluateExamSession($session);
         $session->update([
             'status' => 'completed',
@@ -186,8 +242,7 @@ class ExamController extends Controller
 
     public function result(ExamSession $session)
     {
-        // ... (fungsi ini tidak berubah)
-        if ($session->student_id !== auth()->id()) {
+        if ($session->student_id !== Auth::guard('student')->id()) {
             abort(403);
         }
         $session->load('student');
@@ -198,7 +253,6 @@ class ExamController extends Controller
     
     private function _evaluateExamSession(ExamSession $session): array
     {
-        // ... (fungsi ini tidak berubah)
         $sessionData = $session->session_data;
         $dhcpdConfig = $sessionData['dhcpd_config_content'] ?? '';
         $interfaceConfig = $sessionData['interface_config_content'] ?? '';

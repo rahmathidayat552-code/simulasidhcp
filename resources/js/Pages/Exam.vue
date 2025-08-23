@@ -1,5 +1,6 @@
 <script setup>
 import { Head, useForm } from '@inertiajs/vue3';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { ref, watch } from 'vue';
 import axios from 'axios';
 
@@ -27,6 +28,65 @@ const currentStep = ref(props.examSession.session_data.current_step);
 
 // State reaktif untuk mengontrol kapan modal editor ditampilkan
 const showEditor = ref(false);
+
+// --- LOGIKA TIMER BARU ---
+const timeLeft = ref(0);
+let timerInterval = null;
+
+// Hitung waktu akhir berdasarkan waktu mulai dan durasi
+const getEndTime = () => {
+    const startTime = new Date(props.examSession.start_time).getTime();
+    return startTime + props.examSession.duration * 60 * 1000;
+};
+
+// Fungsi untuk update timer setiap detik
+const updateTimer = () => {
+    const now = new Date().getTime();
+    const endTime = getEndTime();
+    const distance = endTime - now;
+
+    if (distance < 0) {
+        timeLeft.value = 0;
+        clearInterval(timerInterval);
+        finalizeExam(true); // Finalisasi otomatis
+    } else {
+        timeLeft.value = distance;
+    }
+};
+
+// Format waktu yang tersisa menjadi Menit:Detik
+const formattedTimeLeft = computed(() => {
+    const minutes = Math.floor((timeLeft.value % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((timeLeft.value % (1000 * 60)) / 1000);
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+});
+
+// Jalankan timer saat komponen dimuat
+onMounted(() => {
+    updateTimer();
+    timerInterval = setInterval(updateTimer, 1000);
+});
+
+// Hentikan timer saat komponen dihancurkan untuk mencegah memory leak
+onUnmounted(() => {
+    clearInterval(timerInterval);
+});
+// --- AKHIR LOGIKA TIMER BARU ---
+
+
+watch(() => props.examSession.session_data.current_step, (newStep) => {
+    currentStep.value = newStep;
+});
+
+const finalizeForm = useForm({
+    session_id: props.examSession.id,
+});
+// Fungsi finalisasi sekarang menerima parameter untuk membedakan antara manual dan otomatis
+const finalizeExam = (isAuto = false) => {
+    if (isAuto || confirm("Apakah Anda yakin ingin menyelesaikan ujian?")) {
+        finalizeForm.post(route('exam.finalize'));
+    }
+};
 
 // Setiap kali Inertia memuat ulang data (setelah submit form/perintah),
 // pastikan `currentStep` di frontend sinkron dengan data terbaru dari backend.
@@ -91,6 +151,12 @@ const finalizeExam = () => {
                 <h2 class="font-semibold text-xl text-gray-800 leading-tight">
                     Simulasi Ujian Praktik DHCP Server
                 </h2>
+
+                <div class="flex items-center space-x-4">
+                <div class="font-mono text-xl p-2 bg-gray-800 text-white rounded-md">
+                    Sisa Waktu: {{ formattedTimeLeft }}
+                </div>
+                
                 <PrimaryButton @click="finalizeExam" :disabled="finalizeForm.processing">
                     <span v-if="finalizeForm.processing">Memproses...</span>
                     <span v-else>Finalisasi & Kumpul Jawaban</span>

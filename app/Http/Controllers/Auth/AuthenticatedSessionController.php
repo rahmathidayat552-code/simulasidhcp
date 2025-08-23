@@ -35,7 +35,12 @@ class AuthenticatedSessionController extends Controller
         $request->session()->regenerate();
 
         // --- TAMBAHKAN LOGIKA REDIRECT INI ---
-        $user = Auth::user();
+        if (Auth::guard('student')->check()) {
+            return redirect()->intended(route('dashboard', [], false));
+        }
+
+        // Jika bukan student, berarti admin/guru
+        return redirect()->route('admin.students.index');
 
         // Jika yang login adalah instance dari model User (guru)
         if ($user instanceof \App\Models\User) {
@@ -49,12 +54,13 @@ class AuthenticatedSessionController extends Controller
      */
     public function destroy(Request $request): RedirectResponse
     {
-        Auth::guard('web')->logout();
+        // Logout dari guard yang sedang aktif
+        $guard = Auth::guard('student')->check() ? 'student' : 'web';
+        Auth::guard($guard)->logout();
 
         $request->session()->invalidate();
-
         $request->session()->regenerateToken();
 
-        return redirect('/');
+        return redirect('/login');
     }
 }
