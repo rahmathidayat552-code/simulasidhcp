@@ -21,10 +21,8 @@ class DhcpConfigParser
 
         $cleanedContent = $this->cleanConfig($configContent);
 
-        // Kriteria Pengecekan
-        if (!str_contains($cleanedContent, 'authoritative;')) {
-            $errors[] = 'dhcpd.conf: Direktif "authoritative" tidak ditemukan.';
-        }
+        // --- PERUBAHAN DI SINI ---
+        // Kriteria pengecekan untuk 'authoritative' sudah dihapus.
         if (!preg_match("/subnet\s+{$sessionData['subnet']}\s+netmask\s+{$sessionData['netmask']}/", $cleanedContent)) {
             $errors[] = "dhcpd.conf: Deklarasi subnet/netmask tidak sesuai (seharusnya untuk {$sessionData['subnet']}).";
         }

@@ -98,13 +98,17 @@ class ExamController extends Controller
         ]);
 
         if ($isValid) {
-            $sessionData['command_step']++;
-            if ($this->commandValidator->isStepCompleted($currentStep, $sessionData['command_step'])) {
-                $sessionData['current_step']++;
-                $sessionData['command_step'] = 0;
+            // PERUBAHAN DI SINI:
+            // Langkah hanya akan dinaikkan jika perintahnya BUKAN perintah nano.
+            if (!$this->commandValidator->isNanoCommand($request->command)) {
+                $sessionData['command_step']++;
+                if ($this->commandValidator->isStepCompleted($currentStep, $sessionData['command_step'])) {
+                    $sessionData['current_step']++;
+                    $sessionData['command_step'] = 0;
+                }
+                $session->session_data = $sessionData;
+                $session->save();
             }
-            $session->session_data = $sessionData;
-            $session->save();
         }
 
         return redirect()->route('exam.show', $session->id);
@@ -112,33 +116,27 @@ class ExamController extends Controller
 
     public function submitSubnet(Request $request)
     {
+        // ... (fungsi ini tidak berubah)
         $request->validate([
             'session_id' => 'required|exists:exam_sessions,id',
             'subnet_cidr' => 'required|string',
         ]);
-
         $session = ExamSession::findOrFail($request->session_id);
-
         if (($session->session_data['current_step'] ?? 1) != 2) {
             return back()->withErrors(['subnet_cidr' => 'Aksi tidak diizinkan pada langkah ini.']);
         }
-
         $networkInfo = $this->networkCalculator->parseCidr($request->subnet_cidr);
-
         if (!$networkInfo) {
             return back()->withErrors(['subnet_cidr' => 'Format CIDR tidak valid. Contoh: 192.168.1.0/24']);
         }
-
         $sessionData = $session->session_data;
         $sessionData['subnet'] = $networkInfo['subnet'];
         $sessionData['netmask'] = $networkInfo['netmask'];
         $sessionData['gateway'] = $networkInfo['gateway'];
         $sessionData['current_step'] = 3;
         $sessionData['command_step'] = 0;
-
         $session->session_data = $sessionData;
         $session->save();
-
         return redirect()->route('exam.show', $session->id);
     }
 
@@ -161,6 +159,11 @@ class ExamController extends Controller
             return back()->withErrors(['config_content' => 'Aksi tidak valid.']);
         }
 
+        // PERUBAHAN DI SINI:
+        // Setelah menyimpan konfigurasi, SEKARANG kita naikkan langkahnya.
+        $sessionData['current_step']++;
+        $sessionData['command_step'] = 0;
+        
         $session->session_data = $sessionData;
         $session->save();
 
@@ -169,27 +172,25 @@ class ExamController extends Controller
 
     public function finalize(Request $request)
     {
+        // ... (fungsi ini tidak berubah)
         $request->validate(['session_id' => 'required|exists:exam_sessions,id']);
         $session = ExamSession::findOrFail($request->session_id);
-        
         $evaluation = $this->_evaluateExamSession($session);
-
         $session->update([
             'status' => 'completed',
             'final_result' => $evaluation['isSuccess'] ? 'Active (Running)' : 'Failed',
             'end_time' => now(),
         ]);
-
         return redirect()->route('exam.result', $session->id);
     }
 
     public function result(ExamSession $session)
     {
+        // ... (fungsi ini tidak berubah)
         if ($session->student_id !== auth()->id()) {
             abort(403);
         }
         $session->load('student');
-
         return \Inertia\Inertia::render('Result', [
             'examSession' => $session,
         ]);
@@ -197,16 +198,14 @@ class ExamController extends Controller
     
     private function _evaluateExamSession(ExamSession $session): array
     {
+        // ... (fungsi ini tidak berubah)
         $sessionData = $session->session_data;
         $dhcpdConfig = $sessionData['dhcpd_config_content'] ?? '';
         $interfaceConfig = $sessionData['interface_config_content'] ?? '';
-
         $dhcpdResult = $this->dhcpConfigParser->evaluateDhcpdConfig($dhcpdConfig, $sessionData);
         $interfaceResult = $this->dhcpConfigParser->evaluateInterfaceConfig($interfaceConfig);
-        
         $allErrors = array_merge($dhcpdResult['errors'], $interfaceResult['errors']);
         $isSuccess = $dhcpdResult['isValid'] && $interfaceResult['isValid'];
-
         return [
             'isSuccess' => $isSuccess,
             'errors' => $allErrors,

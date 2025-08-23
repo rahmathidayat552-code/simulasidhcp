@@ -96,4 +96,8 @@ class CommandValidator
         
         return $nextCommandIndex >= count(self::EXPECTED_COMMANDS[$step]);
     }
+    public function isNanoCommand(string $command): bool
+    {
+        return str_starts_with(trim($command), 'sudo nano');
+    }
 }
