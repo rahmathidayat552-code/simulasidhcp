@@ -32,9 +32,7 @@ class CommandValidator
     {
         $trimmedCommand = trim($command);
 
-        // Logika untuk Mode Latihan (jika sudah di langkah 7 atau lebih)
         if ($step >= 7) {
-            // Izinkan siswa menjalankan kembali perintah dari langkah 2 hingga 6
             for ($practiceStep = 2; $practiceStep <= 6; $practiceStep++) {
                 foreach (self::EXPECTED_COMMANDS[$practiceStep] as $cmd) {
                     $expectedCmd = $cmd;
@@ -44,13 +42,12 @@ class CommandValidator
                         $expectedCmd = str_replace('{{gateway}}', $gateway, $expectedCmd);
                     }
                     if ($trimmedCommand === $expectedCmd) {
-                        return true; // Perintah ditemukan dan valid
+                        return true;
                     }
                 }
             }
         }
 
-        // Validasi normal untuk alur ujian
         if (!isset(self::EXPECTED_COMMANDS[$step][$commandIndex])) {
             return false;
         }
@@ -69,19 +66,24 @@ class CommandValidator
     }
 
     /**
-     * Memberikan output simulasi untuk perintah yang valid.
+     * Memberikan output simulasi untuk perintah yang valid, sekarang dengan warna.
      */
     public function getSuccessOutput(int $step, int $commandIndex, array $sessionData = []): string
     {
         if ($step === 6 && $commandIndex === 1) { // Perintah 'status'
             $result = $sessionData['final_result_precalculated'] ?? 'Failed';
             
+            // Kode ANSI: \e[1;32m -> Tebal Hijau, \e[1;31m -> Tebal Merah, \e[0m -> Reset
+            $green = "\e[1;32m";
+            $red = "\e[1;31m";
+            $reset = "\e[0m";
+
             if ($result === 'Active (Running)') {
-                return "● isc-dhcp-server.service - ISC DHCP IPv4 server\n   Active: active (running) since " . date('Y-m-d H:i:s') . " UTC";
+                return "● isc-dhcp-server.service - ISC DHCP IPv4 server\n   Active: {$green}active (running){$reset} since " . date('Y-m-d H:i:s') . " UTC";
             } else {
                 $errors = $sessionData['evaluation_errors'] ?? ['Konfigurasi tidak diketahui.'];
                 $errorString = implode("\n", array_map(fn($err) => " - {$err}", $errors));
-                return "● isc-dhcp-server.service - ISC DHCP IPv4 server\n   Active: failed (Result: exit-code) since " . date('Y-m-d H:i:s') . " UTC\n\nDetail Kesalahan:\n{$errorString}";
+                return "● isc-dhcp-server.service - ISC DHCP IPv4 server\n   Active: {$red}failed{$reset} (Result: exit-code) since " . date('Y-m-d H:i:s') . " UTC\n\nDetail Kesalahan:\n{$errorString}";
             }
         }
         

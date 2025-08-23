@@ -18,10 +18,12 @@ const history = ref([]);
 const terminalOutput = ref(null);
 const terminalInput = ref(null);
 
+// Fungsi ini sekarang juga akan menyimpan status 'is_correct'
 const updateHistory = (logs) => {
     history.value = logs.map(log => ({
         command: log.command,
         output: log.response_output,
+        is_correct: log.is_correct, // <-- Tambahkan ini
     }));
 };
 
@@ -49,21 +51,15 @@ const scrollToBottom = async () => {
 const handleCommand = () => {
     if (form.processing || form.command.trim() === '') return;
 
-    // --- LOGIKA BARU YANG LEBIH STABIL ---
-    
-    // 1. Simpan perintah saat ini ke variabel sementara
     const commandToExecute = form.command;
-
-    // 2. Tampilkan perintah di history
-    history.value.push({ command: commandToExecute, output: '' });
+    // Tambahkan entri sementara ke history (is_correct default true)
+    history.value.push({ command: commandToExecute, output: '', is_correct: true });
     
-    // 3. KOSONGKAN input field secara manual SEKARANG JUGA
     form.command = '';
 
-    // 4. Kirim data ke backend menggunakan variabel sementara
     form.transform(() => ({
         session_id: props.sessionId,
-        command: commandToExecute, // Kirim perintah yang sudah disimpan
+        command: commandToExecute,
     })).post(route('exam.execute'), {
         preserveScroll: true,
         onSuccess: (page) => {
@@ -73,7 +69,6 @@ const handleCommand = () => {
             }
         },
         onFinish: () => {
-            // Cukup fokus ke input karena sudah dikosongkan
             focusInput();
         },
     });
@@ -90,7 +85,11 @@ const handleCommand = () => {
                 <div>
                     <span class="text-green-400">student@dhcp-server:~$</span> {{ item.command }}
                 </div>
-                <pre v-if="item.output" class="text-gray-300 whitespace-pre-wrap">{{ item.output }}</pre>
+                <pre
+                    v-if="item.output"
+                    class="whitespace-pre-wrap"
+                    :class="{ 'text-red-500': !item.is_correct, 'text-gray-300': item.is_correct }"
+                >{{ item.output }}</pre>
             </div>
         </div>
 

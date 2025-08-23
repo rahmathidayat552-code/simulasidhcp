@@ -16,31 +16,20 @@ const props = defineProps({
 
 const currentStep = ref(props.examSession.session_data.current_step);
 const showEditor = ref(false);
-
-// --- LOGIKA BARU UNTUK EDITOR ---
-// Variabel untuk menyimpan konten editor yang sedang aktif
 const activeEditorContent = ref('');
 
-// Fungsi ini akan dipanggil saat terminal meminta editor dibuka
 const handleOpenEditor = () => {
-    // Ambil perintah terakhir dari log
     const lastCommand = props.examSession.command_logs?.slice(-1)[0]?.command || '';
-
-    // Tentukan konten mana yang akan ditampilkan berdasarkan perintah terakhir
     if (lastCommand.includes('dhcpd.conf')) {
         activeEditorContent.value = props.examSession.session_data.dhcpd_config_content || '';
     } else if (lastCommand.includes('isc-dhcp-server')) {
         activeEditorContent.value = props.examSession.session_data.interface_config_content || '';
     } else {
-        activeEditorContent.value = ''; // Konten kosong jika tidak cocok
+        activeEditorContent.value = '';
     }
-
-    showEditor.value = true; // Tampilkan modal
+    showEditor.value = true;
 };
-// --- AKHIR LOGIKA BARU UNTUK EDITOR ---
 
-
-// --- LOGIKA TIMER ---
 const timeLeft = ref(0);
 let timerInterval = null;
 
@@ -91,7 +80,6 @@ const saveEditorContent = (content) => {
         config_content: content,
     }).then(() => {
         alert('Konfigurasi berhasil disimpan!');
-        // Tutup modal setelah berhasil menyimpan
         showEditor.value = false;
     }).catch(error => {
         alert('Gagal menyimpan konfigurasi.');
@@ -136,11 +124,11 @@ const finalizeExam = (isAuto = false) => {
             <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6" style="height: 70vh;">
                     
-                    <div class="md:col-span-1">
+                    <div class="md:col-span-1 sticky self-start top-[154px]">
                         <InstructionPanel :current-step="currentStep" />
                     </div>
 
-                    <div class="md:col-span-2">
+                    <div class="md:col-span-2 h-full">
                         <Terminal
                             v-if="currentStep !== 2"
                             :session-id="examSession.id"
