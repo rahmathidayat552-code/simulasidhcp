@@ -28,7 +28,7 @@ class StudentController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'name' => 'required|string|max:255',
+            'name' => 'required|string|max|:255',
             'nisn' => 'required|string|max:255|unique:students',
             'password' => 'required|string|min:8',
         ]);
