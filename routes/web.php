@@ -8,6 +8,7 @@ use App\Http\Controllers\ExamController;
 use App\Http\Controllers\Admin\StudentController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Models\ExamSession;
+use App\Http\Controllers\Admin\ExamResultController;
 
 /*
 |--------------------------------------------------------------------------
@@ -74,7 +75,7 @@ Route::middleware(['auth:web'])->prefix('admin')->name('admin.')->group(function
     ]);
     
     // Placeholder untuk route baru (bisa dikembangkan nanti)
-    Route::get('/exam-results', function () { /* ... */ })->name('exam-results.index');
+    Route::get('/exam-results', [ExamResultController::class, 'index'])->name('exam-results.index');
     Route::get('/exam-settings', function () { /* ... */ })->name('exam-settings.index');
 });
 
