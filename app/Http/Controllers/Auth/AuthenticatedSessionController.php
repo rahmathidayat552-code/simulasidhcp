@@ -8,17 +8,16 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia; // <-- Pastikan Inertia di-import
+use Inertia\Inertia;
 use Inertia\Response;
 
 class AuthenticatedSessionController extends Controller
 {
     /**
-     * Display the login view.
+     * Menampilkan halaman login.
      */
-    public function create(): Response // <-- Ubah return type menjadi Response
+    public function create(): Response
     {
-        // UBAH BAGIAN INI: Ganti view() dengan Inertia::render()
         return Inertia::render('Auth/Login', [
             'canResetPassword' => Route::has('password.request'),
             'status' => session('status'),
@@ -26,41 +25,37 @@ class AuthenticatedSessionController extends Controller
     }
 
     /**
-     * Handle an incoming authentication request.
+     * Menangani permintaan autentikasi yang masuk.
      */
     public function store(LoginRequest $request): RedirectResponse
     {
-       $request->authenticate();
+        $request->authenticate();
 
         $request->session()->regenerate();
 
-        // --- TAMBAHKAN LOGIKA REDIRECT INI ---
-        if (Auth::guard('student')->check()) {
-            return redirect()->intended(route('dashboard', [], false));
-        }
-
-        // Jika bukan student, berarti admin/guru
-        return redirect()->route('admin.students.index');
+        $user = Auth::user();
 
         // Jika yang login adalah instance dari model User (guru)
         if ($user instanceof \App\Models\User) {
-            return redirect()->route('admin.students.index');
+            return redirect()->route('admin.dashboard');
         }
+
+        // Jika bukan, berarti dia adalah Siswa
         return redirect()->intended(route('dashboard', [], false));
     }
 
     /**
-     * Destroy an authenticated session.
+     * Menghancurkan sesi autentikasi.
      */
     public function destroy(Request $request): RedirectResponse
     {
-        // Logout dari guard yang sedang aktif
         $guard = Auth::guard('student')->check() ? 'student' : 'web';
         Auth::guard($guard)->logout();
 
         $request->session()->invalidate();
+
         $request->session()->regenerateToken();
 
-        return redirect('/login');
+        return redirect('/');
     }
 }
