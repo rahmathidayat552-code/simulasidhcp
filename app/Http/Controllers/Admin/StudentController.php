@@ -1,6 +1,5 @@
 <?php
 
-// PERBAIKI BARIS INI: ganti Http-Controllers menjadi Http\Controllers
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
@@ -27,8 +26,9 @@ class StudentController extends Controller
      */
     public function store(Request $request)
     {
+        // PERBAIKAN DI SINI: hapus '|' ekstra setelah 'max'
         $request->validate([
-            'name' => 'required|string|max|:255',
+            'name' => 'required|string|max:255',
             'nisn' => 'required|string|max:255|unique:students',
             'password' => 'required|string|min:8',
         ]);
@@ -50,7 +50,7 @@ class StudentController extends Controller
         $request->validate([
             'name' => 'required|string|max:255',
             'nisn' => ['required', 'string', 'max:255', Rule::unique('students')->ignore($student->id)],
-            'password' => 'nullable|string|min:8', // Password opsional saat update
+            'password' => 'nullable|string|min:8',
         ]);
 
         $student->update([
@@ -58,7 +58,6 @@ class StudentController extends Controller
             'nisn' => $request->nisn,
         ]);
 
-        // Hanya update password jika diisi
         if ($request->filled('password')) {
             $student->update(['password' => Hash::make($request->password)]);
         }

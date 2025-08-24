@@ -31,6 +31,25 @@ const formatDuration = (session) => {
     
     return `${minutes} min ${seconds} dtk`;
 };
+
+// Helper untuk memberikan warna pada Grade
+const gradeClass = (grade) => {
+    switch (grade) {
+        case 'A+':
+        case 'A':
+            return 'text-green-600';
+        case 'B':
+            return 'text-blue-600';
+        case 'C':
+            return 'text-yellow-600';
+        case 'D':
+            return 'text-orange-600';
+        case 'E':
+            return 'text-red-600';
+        default:
+            return 'text-gray-500';
+    }
+};
 </script>
 
 <template>
@@ -63,7 +82,14 @@ const formatDuration = (session) => {
                                     <td class="px-6 py-4 whitespace-nowrap">{{ examResults.from + index }}</td>
                                     <td class="px-6 py-4 whitespace-nowrap">{{ result.student.name }}</td>
                                     <td class="px-6 py-4 whitespace-nowrap">{{ result.student.nisn }}</td>
-                                    <td class="px-6 py-4 whitespace-nowrap font-bold text-center">-</td>
+                                    
+                                    <td 
+                                        class="px-6 py-4 whitespace-nowrap font-bold text-center" 
+                                        :class="gradeClass(result.grade)"
+                                    >
+                                        {{ result.grade }}
+                                    </td>
+                                    
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <span
                                             class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full"
@@ -87,5 +113,6 @@ const formatDuration = (session) => {
                     </div>
                 </div>
             </div>
-        </div> </AuthenticatedLayout>
+        </div>
+    </AuthenticatedLayout>
 </template>
